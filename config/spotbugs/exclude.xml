@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Exclude auto-generated code -->
+    <Match>
+        <Class name="~.*\.Q.*"/>
+    </Match>
+
+    <!-- Exclude EI_EXPOSE_REP warnings for record classes and DTOs -->
+    <!-- These are false positives since records are immutable by design -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Exclude Spring Boot configuration classes from certain checks -->
+    <Match>
+        <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR"/>
+        <Class name="~.*\.config\..*"/>
+    </Match>
+
+    <!-- Exclude test classes from certain checks -->
+    <Match>
+        <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_ANON"/>
+        <Source name="~.*Test\.java"/>
+    </Match>
+
+    <!--
+        Add custom exclusions here as needed.
+        Common patterns to exclude:
+        - EI_EXPOSE_REP: May expose internal representation
+        - EI_EXPOSE_REP2: May expose internal representation
+        - URF_UNREAD_FIELD: Unread field (often false positive with Lombok)
+        - UWF_UNWRITTEN_FIELD: Unwritten field
+        - SE_BAD_FIELD: Non-transient non-serializable instance field
+    -->
+
+</FindBugsFilter>
