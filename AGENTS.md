@@ -106,6 +106,7 @@ The agent should repeat steps 3–8 until the solution is clean and idiomatic.
 - Java: pattern matching, records, virtual threads (Java 21+).  
 - Spring Boot 3.x: declarative beans, auto-configuration, conditional registration.  
 - Functional paradigms: streams, higher-order functions where appropriate.  
+- Lombok: Use `@Getter`, `@Setter`, `@Builder`, `@RequiredArgsConstructor`; avoid `@Data` on domain entities.  
 
 **Why:** Readability, performance, reduced boilerplate.
 
@@ -128,71 +129,138 @@ The agent should repeat steps 3–8 until the solution is clean and idiomatic.
 - For each business logic component, create `FooService` interface + `FooServiceImpl` (or `FooServiceAdapter`).  
 - Inject via DI framework; never instantiate directly.  
 - Compose using constructor injection, not property injection.  
+- Place all services under `application/service/`.  
 
 **Why:** Swappability, mocking, decoupling.
 
 ## 4.3 Layered Architecture  
-**What:** Organize code into distinct layers (controller → service → data).  
+**What:** Organize code into distinct layers with unidirectional dependency flow.  
 **How:**  
-- **Controller:** HTTP entry points; validation, error translation only.  
-- **Service:** Business logic; orchestration, rules enforcement.  
-- **Data Access:** Queries, transactions, persistence.  
-- Unidirectional dependency flow: controller → service → repository.  
 
-**Why:** Clear separation, easier testing, predictable flow.
+| Layer | Location | Responsibility | Examples |
+|-------|----------|---|---|
+| **Interface (HTTP/API)** | `interface/api`, `interface/advice`, `interface/scheduler` | Entry points, error handling, scheduling | REST controllers, exception handlers, scheduled tasks |
+| **Application (Business Logic)** | `application/service`, `application/rule`, `application/specification`, `application/validation`, `application/mapper` | Orchestration, rules, transformations | Service implementations, business rules, query specs, validators, DTOs mappers |
+| **Domain (Models)** | `domain/<entity-name>` | Pure domain models, value objects | Aggregates, entities, domain events |
+| **Persistence (Data Access)** | `persistence/entity`, `persistence/repository`, `persistence/jdbc` | Queries, transactions, schema | JPA entities, Spring Data repos, custom JDBC queries |
+| **Common (Shared)** | `common/dto`, `common/enum`, `common/constant`, `common/pojo`, `common/util` | Reusable artifacts | Request/response DTOs, enums, constants, utilities |
+| **Client (External APIs)** | `client/<service-name>` | REST clients, adapters | HTTP clients, API adapters |
+| **Config (Framework Setup)** | `config/` | Spring beans, properties | Configuration classes, bean definitions |
+
+**Dependency Flow:** `interface` → `application` → `domain` → `persistence`, `common`, `client`.  
+**Anti-Pattern:** Never import upward (e.g., `domain` must not import `application`).
+
+**Why:** Clear separation, easier testing, predictable flow, maintainability.
 
 ## 4.4 API Design  
 **What:** Design RESTful endpoints with clear contracts.  
 **How:**  
-- Use DTOs (not entities) for request/response.  
-- Annotate with Swagger/OpenAPI (endpoints, parameters, codes).  
+- Use DTOs (from `common/dto`) for request/response, never expose entities.  
+- Annotate all controllers with Swagger/OpenAPI (`@Operation`, `@Parameter`, `@ApiResponse`).  
 - Return meaningful HTTP status codes (200, 201, 400, 404, 500).  
 - Version APIs if breaking changes occur.  
+- Place controllers under `interface/api/`.  
 
 **Why:** Client clarity, automatic documentation, versioning safety.
 
 ---
 
-# 5. 📦 Package Structure (Universal Pattern)
+# 5. 📦 Package Structure (Project Convention)
 
-Follow this structure across all projects. Pattern-based components remain top-level packages, not nested under `service/`:
+Follow this structure rigorously. Each layer is isolated and has specific responsibilities.
 
 ```
 root
  └── com.organization.product
-       ├── advice/                  # Global exception handlers, interceptors
-       ├── client/                  # External API clients
-       ├── config/                  # Spring/framework configuration
-       ├── consumer/                # Message consumers (Kafka, RabbitMQ, etc.)
-       ├── controller/              # REST entry points
-       ├── domain/                  # Domain models, business logic
-       ├── dto/                     # Data transfer objects
-       ├── enum/                    # Enumerations
-       ├── constant/                # Literal constants
-       ├── exception/               # Custom exceptions
-       ├── mapper/                  # Object transformers
-       ├── model/                   # Value objects, transient models
-       ├── producer/                # Message publishers
-       ├── request/                 # Request payloads
-       ├── response/                # Response payloads
-       ├── service/                 # Business logic services
-       ├── strategy/                # Strategy pattern implementations
-       ├── template/                # Template method implementations
-       ├── decorator/               # Decorator pattern implementations
-       ├── mediator/                # Mediator pattern implementations
-       ├── composite/               # Composite pattern implementations
-       ├── rule/                    # Business rules, validations
-       ├── specification/           # Query specifications (e.g., JPA Criteria)
-       ├── factory/                 # Factory pattern implementations
-       ├── entity/                  # JPA/ORM entities
-       ├── repository/              # Data access interfaces & implementations
-       └── Application.java         # Main entry point
+       ├── common/                          # Shared, reusable components
+       │   ├── dto/                         # Request/response data transfer objects
+       │   ├── enum/                        # Enumerations (status, types, etc.)
+       │   ├── constant/                    # Literal constants, config defaults
+       │   ├── pojo/                        # Plain old Java objects, transient models
+       │   └── util/                        # Utility functions, helpers
+       │
+       ├── application/                     # Core business logic layer
+       │   ├── service/                     # Service interfaces & implementations
+       │   │   └── <domain>/                # Domain-specific services (user, payment, etc.)
+       │   ├── rule/                        # Business rules, validation logic
+       │   ├── specification/               # Query specifications (JPA Criteria, predicates)
+       │   ├── validation/                  # Input validators, bean validation handlers
+       │   └── mapper/                      # Object transformation (entity ↔ DTO)
+       │
+       ├── interface/                       # HTTP/external entry points
+       │   ├── api/                         # REST controllers
+       │   │   └── <domain>/                # Domain-specific controllers (user, payment, etc.)
+       │   ├── advice/                      # Global exception handlers, interceptors
+       │   └── scheduler/                   # Scheduled tasks, cron jobs
+       │
+       ├── domain/                          # Domain-centric pure models
+       │   └── <domain-name>/               # Each domain is a sub-package (user, payment, order)
+       │       ├── <Entity>.java            # Domain aggregate root or entity
+       │       ├── <ValueObject>.java       # Value objects (Money, Address, etc.)
+       │       └── <Event>.java             # Domain events (optional)
+       │
+       ├── persistence/                     # Data access layer
+       │   ├── entity/                      # JPA/ORM entities
+       │   │   └── <domain>/                # Organized by domain
+       │   ├── repository/                  # Spring Data repositories, custom queries
+       │   │   └── <domain>/                # Organized by domain
+       │   └── jdbc/                        # Custom JDBC operations, complex queries
+       │
+       ├── client/                          # External service clients
+       │   └── <service-name>/              # Service-specific client (payment-gateway, auth-service)
+       │       ├── <ServiceClient>.java     # REST client
+       │       └── <RequestResponse>.java   # Client-specific DTOs
+       │
+       ├── config/                          # Framework configuration
+       │   ├── ApplicationConfig.java       # Bean definitions, Spring configuration
+       │   └── <FeatureConfig>.java         # Feature-specific configs
+       │
+       └── Application.java                 # Main entry point
 ```
 
-**Rationale:**  
-- All business concerns (`service`, `domain`) and patterns remain at project root for agent traversal.  
-- `entity/` and `repository/` isolated to prevent accidental exposure.  
-- Sub-packages (`client.payment`, `service.user`) follow domain hierarchy.
+**Key Principles:**
+
+1. **`common/`** holds all cross-cutting, reusable artifacts. No domain logic here.  
+2. **`application/`** is the heart of business logic. Services, rules, specs, mappers, validators live here.  
+3. **`interface/`** is the boundary: controllers, advice, schedulers. HTTP concerns only.  
+4. **`domain/`** houses pure domain models, organized by domain concept (e.g., `domain/user/`, `domain/payment/`).  
+5. **`persistence/`** isolates data access. Entities and repos grouped by domain.  
+6. **`client/`** wraps external HTTP APIs. Keeps adapters isolated.  
+7. **`config/`** centralizes Spring bean setup and feature toggles.  
+
+**Domain Hierarchy Example:**
+
+For a payments product:
+```
+domain/user/
+  └── User.java
+  └── UserId.java
+  
+domain/payment/
+  └── Payment.java
+  └── PaymentRequest.java
+  └── PaymentStatus.java
+
+persistence/entity/user/
+  └── UserEntity.java
+
+persistence/entity/payment/
+  └── PaymentEntity.java
+
+application/service/user/
+  └── UserService.java
+  └── UserServiceImpl.java
+
+application/service/payment/
+  └── PaymentService.java
+  └── PaymentServiceImpl.java
+
+interface/api/user/
+  └── UserController.java
+
+interface/api/payment/
+  └── PaymentController.java
+```
 
 ---
 
@@ -216,21 +284,21 @@ root
 - Target 80% code coverage minimum.  
 - Test happy path, edge cases, and failure modes.  
 
-**Scope:** All `service/`, `domain/`, `mapper/`, `rule/`, and pattern-based components (`strategy`, `template`, `decorator`, `mediator`, `composite`, `specification`, `factory`).
+**Scope:** All `application/service/`, `application/rule/`, `application/specification/`, `application/validation/`, `application/mapper/`, and any other business logic components.
 
-**Naming:** `<Component>Test` (e.g., `UserServiceTest`, `PaymentStrategyTest`).
+**Naming:** `<Component>Test` (e.g., `UserServiceTest`, `PaymentRuleTest`).
 
 ## 6.3 Integration Testing  
 **What:** Test component collaboration (with DB, messaging, external services).  
 **How:**  
 - Use Testcontainers for ephemeral DB, message broker instances.  
 - Load full Spring context only if necessary.  
-- Validate end-to-end flows: request → service → repository → DB.  
+- Validate end-to-end flows: controller → service → repository → DB.  
 - Use transactional rollback to keep tests isolated.  
 
 **Scope:** Repository logic, service orchestration, multi-service workflows.
 
-**Naming:** `<Feature>IntegrationTest` (e.g., `OrderCheckoutIntegrationTest`).
+**Naming:** `<Feature>IntegrationTest` (e.g., `PaymentProcessingIntegrationTest`).
 
 ## 6.4 API/Controller Testing  
 **What:** Test HTTP contract (request parsing, response serialization, status codes).  
@@ -240,7 +308,7 @@ root
 - Use MockMvc to perform HTTP requests and assert responses.  
 - Validate status, headers, body structure, error messages.  
 
-**Scope:** Only `controller/` package components.
+**Scope:** Only `interface/api/` components.
 
 **Naming:** `<Endpoint>ControllerTest` (e.g., `UserControllerTest`).
 
@@ -273,7 +341,7 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 ## 7.2 API Documentation  
 **What:** REST endpoints have clear contracts discoverable by clients.  
 **How:**  
-- Annotate all controllers with Swagger/OpenAPI (`@Operation`, `@Parameter`, `@ApiResponse`).  
+- Annotate all controllers (in `interface/api/`) with Swagger/OpenAPI (`@Operation`, `@Parameter`, `@ApiResponse`).  
 - Document path, query, request body, response body, error codes.  
 - Keep descriptions concise (1–2 lines).  
 - Auto-generate OpenAPI spec from annotations.  
@@ -298,14 +366,13 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 **How:**  
 - Use `Objects.requireNonNull(param, "reason")` for mandatory inputs.  
 - Add Jakarta Bean Validation annotations: `@NotNull`, `@NotBlank`, `@Size`, `@Email`, `@Positive`.  
-- Validate in DTOs, not services.  
+- Validate in DTOs and controllers, not services.  
 - Provide meaningful error messages.  
+- Place custom validators in `application/validation/`.  
 
 **Why:** Graceful rejection, clear error feedback, security.
 
 ---
-
-# 9. 🚫 Forbidden Practices
 
 # 9. 🚫 Forbidden Practices
 
@@ -315,19 +382,19 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 
 - **Anti-Pattern:** Business logic in controllers  
   **Problem:** Reusability loss, testing friction  
-  **Alternative:** Move to service layer  
+  **Alternative:** Move to `application/service/`  
 
 - **Anti-Pattern:** Direct entity exposure  
   **Problem:** Tight coupling, schema leakage  
-  **Alternative:** Use DTOs  
+  **Alternative:** Use DTOs from `common/dto/`  
 
 - **Anti-Pattern:** Hard-coded strings  
   **Problem:** Maintenance burden, no single source of truth  
-  **Alternative:** Use enums, constants, config  
+  **Alternative:** Use `common/enum/`, `common/constant/`  
 
 - **Anti-Pattern:** Naked SQL in services  
   **Problem:** Security risk, maintainability loss  
-  **Alternative:** Use query builders, ORM, parameterized statements  
+  **Alternative:** Use repositories or `persistence/jdbc/` with parameterized statements  
 
 - **Anti-Pattern:** Circular dependencies  
   **Problem:** Impossible to reason about, test, deploy  
@@ -335,7 +402,7 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 
 - **Anti-Pattern:** Static utility abuse  
   **Problem:** Non-testable, hidden dependencies  
-  **Alternative:** Inject collaborators  
+  **Alternative:** Inject collaborators or place in `common/util/` with static final helpers only  
 
 - **Anti-Pattern:** Mutable shared state  
   **Problem:** Race conditions, unpredictable behavior  
@@ -343,7 +410,15 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 
 - **Anti-Pattern:** Swallowing exceptions  
   **Problem:** Silent failures, debugging nightmare  
-  **Alternative:** Log and re-throw or handle explicitly, leverage exceptions in exception package. preserve existing pattern add new exception using same pattern when required.  
+  **Alternative:** Log and re-throw or handle explicitly; leverage exceptions in `interface/advice/`. Preserve existing pattern; add new exceptions using same pattern when required.  
+
+- **Anti-Pattern:** Domain logic in persistence entities  
+  **Problem:** Entity becomes bloated; domain rules leak into ORM concerns  
+  **Alternative:** Keep `persistence/entity/` as pure ORM; place logic in `domain/` and `application/service/`  
+
+- **Anti-Pattern:** Importing entities in controllers  
+  **Problem:** Direct exposure of persistence schema  
+  **Alternative:** Use `common/dto/` as contract; map entities via `application/mapper/`  
 
 ---
 
@@ -351,13 +426,18 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 
 **When the requirement is ambiguous, prefer:**
 
-- Scenario: Multiple implementation paths, Decision: Simpler, testable option, Rationale: YAGNI, easier to refactor later
-- Scenario: Code organization, Decision: Package structure defined in §5, Rationale: Consistency, agent navigation
-- Scenario: Abstraction level, Decision: Interface + impl over inheritance, Rationale: Composition > inheritance
-- Scenario: Mutation vs. immutability, Decision: Immutable (final fields, builders), Rationale: Thread-safety, predictability
-- Scenario: Error handling, Decision: Checked exception vs. unchecked, Rationale: Unchecked for logic errors; checked for recoverable I/O
-- Scenario: Logging level, Decision: DEBUG for entry/exit; INFO for state changes, Rationale: Observability without noise
-- Scenario: Testing, Decision: Unit test first; integration only if needed, Rationale: Speed, isolation, clarity
+| Scenario | Decision | Rationale |
+|---|---|---|
+| **Where to place new logic?** | Follow package hierarchy in §5; services in `application/`, models in `domain/`, entry points in `interface/api/` | Consistency, agent navigation, dependency flow |
+| **Multiple implementation paths** | Simpler, testable option | YAGNI, easier to refactor later |
+| **Abstraction level** | Interface + impl over inheritance | Composition > inheritance |
+| **Mutation vs. immutability** | Immutable (final fields, builders) | Thread-safety, predictability |
+| **Error handling** | Checked exception vs. unchecked | Unchecked for logic errors; checked for recoverable I/O |
+| **Logging level** | DEBUG for entry/exit; INFO for state changes | Observability without noise |
+| **Testing** | Unit test first; integration only if needed | Speed, isolation, clarity |
+| **DTO creation** | Place in `common/dto/` unless service-specific | Reusability, shared contract |
+| **Entity vs. Domain Model** | Keep separate; entities in `persistence/entity/`, models in `domain/` | Schema isolation, pure logic |
+| **Validation** | Bean validation in DTOs; business rules in `application/rule/` | Fail fast, separation of concerns |
 
 ---
 
@@ -376,14 +456,15 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 
 **Data & Messaging:**
 - JPA / Spring Data  
-- JDBC (for complex queries)  
+- JDBC (for complex queries in `persistence/jdbc/`)  
 - Kafka / RabbitMQ (event-driven)  
 - Testcontainers (ephemeral infra)  
 
 **API & Docs:**
-- Spring Web (REST)  
+- Spring Web (REST controllers in `interface/api/`)  
 - OpenAPI / Swagger (documentation)  
 - Spring Validation (Jakarta Bean Validation)  
+- Lombok (boilerplate reduction)  
 
 **Do not introduce:**
 - Custom annotation processors (without architectural review)  
@@ -407,8 +488,8 @@ public PaymentResponse process(PaymentRequest paymentRequest) { ... }
 **Format:**
 ```markdown
 ## [YYYY-MM-DD HH:MM UTC]
-- **feat:** Added user payment endpoint (`POST /v1/users/{id}/payments`)  
-  - Files: `UserController.java`, `PaymentService.java`, `PaymentRequest.java`  
+- **feat:** Added user payment endpoint  
+  - Files: `interface/api/PaymentController.java`, `application/service/PaymentService.java`, `common/dto/PaymentRequest.java`  
   - Next: Add audit logging, integration tests
 ```
 
@@ -468,12 +549,13 @@ Before submitting code, verify:
 - [ ] **Tests:** Unit tests written, 80%+ coverage, integration tests if applicable  
 - [ ] **Documentation:** Javadoc on all public methods, OpenAPI on all endpoints  
 - [ ] **Architecture:** SOLID principles applied, no circular dependencies  
+- [ ] **Package Structure:** Code placed in correct layer per §5 (e.g., services in `application/`, controllers in `interface/api/`)  
 - [ ] **Null Safety:** All parameters marked `@Nullable` or `@NonNull`; inputs validated  
 - [ ] **Immutability:** Fields marked `final` where possible  
 - [ ] **Dependency Injection:** All collaborators injected, not instantiated  
-- [ ] **Layering:** No business logic in controllers; no persistence in services  
-- [ ] **DTOs:** Entities not exposed; DTOs used for API contracts  
-- [ ] **Error Handling:** Exceptions logged with context; user-friendly messages  
+- [ ] **Layering:** Dependency flow respected (§4.3); no upward imports  
+- [ ] **DTOs:** Entities not exposed; `common/dto/` used for API contracts  
+- [ ] **Error Handling:** Exceptions logged with context; user-friendly messages; handlers in `interface/advice/`  
 - [ ] **Commits:** Atomic, conventional format, changelog updated  
 
 ---
@@ -482,14 +564,14 @@ Before submitting code, verify:
 
 **Guiding Principle:** Write code that ships reliably.
 
-- **Testable:** Inject dependencies; keep logic pure.  
-- **Maintainable:** SOLID principles; single responsibility; clear naming.  
+- **Testable:** Inject dependencies; keep logic pure; follow layered architecture.  
+- **Maintainable:** SOLID principles; single responsibility; clear naming; organized by domain.  
 - **Observable:** Log intent; annotate APIs; document decisions.  
 - **Immutable:** Prefer final fields; builders over setters.  
-- **Layered:** Controllers → Services → Repositories → Persistence.  
+- **Layered:** `interface` → `application` → `domain` → `persistence`, never reverse.  
 
 **The Agent's Mantra:**  
-*Understand the requirement. Write minimal, clean code. Test relentlessly. Document clearly. Refactor fearlessly.*
+*Understand the requirement. Find the right layer. Write minimal, clean code. Test relentlessly. Document clearly. Refactor fearlessly.*
 
 ---
 
